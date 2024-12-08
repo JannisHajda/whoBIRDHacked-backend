@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Client List</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+        th { background-color: #f4f4f4; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+    </style>
+</head>
+<body>
+<h1>Connected Clients</h1>
+<table>
+    <thead>
+    <tr>
+        <th>UUID</th>
+        <th>Status</th>
+        <th>Last Seen</th>
+        <th>Location</th>
+        <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    {{range .Clients}}
+    <tr>
+        <td>{{.UUID}}</td>
+        <td>{{if .Connected}}<span style="color: green;">Connected</span>{{else}}<span style="color: red;">Disconnected</span>{{end}}</td>
+        <td>{{.LastSeen}}</td>
+        <td>lat: {{.Location.Lat}} <br> lon: {{.Location.Lon}}</td>
+        <td>
+            <button onclick="sendCommand('ping', '{{.UUID}}')">Send Ping</button>
+        </td>
+    </tr>
+    {{end}}
+    </tbody>
+</table>
+
+
+<script>
+    function sendCommand(cmd, uuid) {
+        fetch('/api/exec', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cmd: cmd, uuid: uuid })
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Command failed');
+                }
+                return response.text();
+            })
+            .catch(err => {
+                console.error(err);
+                alert('An error occurred');
+            });
+    }
+</script>
+</body>
+</html>
