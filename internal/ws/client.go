@@ -31,3 +31,10 @@ func (c Client) GetContacts() error {
 		Data: nil,
 	})
 }
+
+func (c Client) GetLocation() error {
+	return c.Conn.WriteJSON(Message{
+		Type: "location",
+		Data: nil,
+	})
+}

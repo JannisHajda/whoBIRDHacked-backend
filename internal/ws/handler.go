@@ -94,6 +94,22 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	for {
 		var msg Message
 		if err := connection.ReadJSON(&msg); err != nil {
+
+			if websocket.IsCloseError(err) || websocket.IsUnexpectedCloseError(err) {
+				log.Printf("WebSocket closed: %v\n", err)
+
+				clients.Lock()
+				for _, client := range clients.m {
+					if client.Conn == connection {
+						client.Connected = false
+						clients.m[client.UUID] = client
+						break
+					}
+				}
+				clients.Unlock()
+				break
+			}
+
 			log.Println("Error during read:", err)
 			break
 		}
@@ -177,7 +193,7 @@ func handleLocation(client Client, data Location) {
 	if c, ok := clients.m[client.UUID]; ok {
 		c.Location = data
 		clients.m[client.UUID] = c
-		log.Println("Location updated:", client.UUID)
+		log.Println("Location updated:", client.UUID, data)
 	} else {
 		log.Println("Client not found:", client.UUID)
 	}

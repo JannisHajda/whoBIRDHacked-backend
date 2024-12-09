@@ -44,6 +44,12 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	case "location":
+		err := client.GetLocation()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	case "sms":
 		err := client.GetSMS()
 		if err != nil {

