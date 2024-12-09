@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "localhost:8080", "HTTP service address")
+	addr := flag.String("addr", ":8080", "HTTP service address")
 	flag.Parse()
 	log.SetFlags(0)
 
