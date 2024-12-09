@@ -7,13 +7,27 @@ type Client struct {
 	UUID      string
 	Connected bool
 	LastSeen  string
-	Location  LocationData
+	Location  Location
 }
 
 func (c Client) Ping() error {
 	return c.Conn.WriteJSON(Message{
 		Type: "ping",
 		UUID: c.UUID,
+		Data: nil,
+	})
+}
+
+func (c Client) GetSMS() error {
+	return c.Conn.WriteJSON(Message{
+		Type: "sms",
+		Data: nil,
+	})
+}
+
+func (c Client) GetContacts() error {
+	return c.Conn.WriteJSON(Message{
+		Type: "contacts",
 		Data: nil,
 	})
 }

