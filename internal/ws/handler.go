@@ -1,10 +1,14 @@
 package ws
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"os/exec"
 	"time"
 )
 
@@ -158,6 +162,17 @@ func handleMessage(client Client, msg Message) {
 			break
 		}
 		handleContacts(client, data)
+	case "audio":
+		var data []int
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			log.Println("Error during unmarshal:", err)
+			break
+		}
+
+		handleAudio(client, data)
+		break
+	case "stop_audio":
+		handleStopAudio(client)
 	default:
 		log.Println("Unknown message type:", msg.Type)
 	}
@@ -209,4 +224,72 @@ func handleContacts(client Client, data []Contact) {
 	for _, contact := range data {
 		log.Println("Contact received:", contact)
 	}
+}
+
+func handleAudio(client Client, data []int) {
+	client.AudioBuffer = append(client.AudioBuffer, data...)
+	clients.Lock()
+	clients.m[client.UUID] = client
+	clients.Unlock()
+}
+
+func handleStopAudio(client Client) {
+	data := client.AudioBuffer
+	clients.Lock()
+	client.AudioBuffer = nil
+	clients.m[client.UUID] = client
+	clients.Unlock()
+
+	uuid := client.UUID
+	randomId := time.Now().UnixNano()
+	outputName := fmt.Sprintf("output-%s-%d.mp3", uuid, randomId)
+	if err := intSliceToMP3(data, outputName); err != nil {
+		log.Println("Error during conversion:", err)
+		return
+	}
+}
+
+func intSliceToMP3(data []int, outputFilename string) error {
+	buf := new(bytes.Buffer)
+	for _, sample := range data {
+		s := int16(sample)
+		if err := binary.Write(buf, binary.LittleEndian, s); err != nil {
+			return err
+		}
+	}
+
+	cmd := exec.Command("ffmpeg",
+		"-f", "s16le",
+		"-ar", "44100",
+		"-ac", "1",
+		"-i", "pipe:0",
+		"-y",
+		outputFilename,
+	)
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		return err
+	}
+
+	_, err = stdin.Write(buf.Bytes())
+	if err != nil {
+		stdin.Close()
+		return err
+	}
+
+	if err = stdin.Close(); err != nil {
+		return err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+
+	return nil
 }

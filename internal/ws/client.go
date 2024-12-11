@@ -3,11 +3,12 @@ package ws
 import "github.com/gorilla/websocket"
 
 type Client struct {
-	Conn      *websocket.Conn
-	UUID      string
-	Connected bool
-	LastSeen  string
-	Location  Location
+	Conn        *websocket.Conn
+	UUID        string
+	Connected   bool
+	LastSeen    string
+	Location    Location
+	AudioBuffer []int
 }
 
 func (c Client) Ping() error {
